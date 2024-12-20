@@ -1,9 +1,16 @@
 package com.thehecklers.sburrestdemo;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.repository.CrudRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -19,27 +26,54 @@ public class SburRestDemoApplication {
 	}
 }
 
-@RestController
-@RequestMapping("/coffees")
-class RestApiController {
-	// 처리할 데이터
-	private List<Coffee> coffees = new ArrayList<>();
+// Ch4 5.초기 데이터를 생성하는 컴포넌트 구현
+@Component
+class DataLoader {
+	private final CoffeeRepository coffeeRepository;
+	public DataLoader(CoffeeRepository coffeeRepository) {
+		this.coffeeRepository = coffeeRepository;
+	}
 
-	// 생성자
-	public RestApiController() {
-		coffees.addAll(List.of(
+	@PostConstruct
+	private void loadData() {
+		this.coffeeRepository.saveAll(List.of(
 				new Coffee("Cafe Cereza"),
 				new Coffee("Cafe Ganador"),
 				new Coffee("Cafe Lareno"),
 				new Coffee("Cafe Tres Pontas")
 		));
 	}
+}
 
-	// GET방식으로 요청 처리...
+
+@RestController
+@RequestMapping("/coffees")
+class RestApiController {
+	// Ch4 3.저장소 사용하기
+//	// 처리할 데이터
+//	private List<Coffee> coffees = new ArrayList<>();  // 삭제
+	// 저장소 호출(spring의 생성자 주입)
+	private final CoffeeRepository coffeeRepository;
+
+	// 생성자(수정) -> coffeeRepository 불러옴. 생성장에서 초기 데이터 생성
+	public RestApiController(CoffeeRepository coffeeRepository) {
+		this.coffeeRepository = coffeeRepository;
+
+		//Ch4 5. 이전 추가 정보 정리하기...
+//		this.coffeeRepository.saveAll(List.of(
+//				new Coffee("Cafe Cereza"),
+//				new Coffee("Cafe Ganador"),
+//				new Coffee("Cafe Lareno"),
+//				new Coffee("Cafe Tres Pontas")
+//		));
+
+	}
+
+	// Ch4 4. 매핑된 메서드 수정작업...
 //	@RequestMapping(value = "/coffees", method = RequestMethod.GET)
 	@GetMapping
 	Iterable<Coffee> getCoffees() {
-		return coffees;
+		return coffeeRepository.findAll();
 	}
 	/*
 	GetMapping, PostMapping, PutMapping, PatchMapping, DeleteMapping
@@ -49,58 +83,44 @@ class RestApiController {
 	// 특정 ID를 통해서 불러오기
 	@GetMapping("/{id}")
 	Optional<Coffee> getCoffee(@PathVariable String id) {  // @PathVariable은 경로값을 변수로..
-		for (Coffee c : coffees) {
-			if (c.getId().equals(id)) {
-				return Optional.of(c);
-			}
-		}
-		return Optional.empty();  // null
+		return coffeeRepository.findById(id);
 	}
 
 	// Post는 생성하기
 	@PostMapping
 	Coffee postCoffee(@RequestBody Coffee c) {
-		coffees.add(c);
-		return c;
+		return coffeeRepository.save(c);
 	}
-//	Coffee postCoffee(@RequestBody Coffee coffee) {
-		// @RequestBody는 요청 패킷의 데이터 부분(body)을 읽어 들임
-		// 통신 요청 패킷 크게 두 부분으로 나눔. header(상태및 기타 정보), body(전달할 Data)
-		// 때문에 Request Body에는 JSON형식으로 데이터를 표시해야 함.
-//		System.out.println(coffee);
-//		coffees.add(coffee);
-//		return coffee;
-//	}
 
 	// Put 생성하기
 	@PutMapping("/{id}")
 	ResponseEntity<Coffee> putCoffee(@PathVariable String id , @RequestBody Coffee coffee) {
-		int coffeeIndex = -1;  // coffees에 값이 없는 경우
-
-		for (Coffee c : coffees) {
-			if (c.getId().equals(id)) {   // coffees에 있는 객체 중 id가 같은 coffee가 있다면,
-				coffeeIndex = coffees.indexOf(c); // coffee 객체의 인덱스값을 coffeeIndex에 대입
-				coffees.set(coffeeIndex, coffee); // coffeeIndex과 전달받은 coffee 객체 정보로 수정
-			}
-		}
-		return (coffeeIndex == -1)    // coffees 목록에 없는 경우
-				? new ResponseEntity<>(postCoffee(coffee), HttpStatus.CREATED)  // 없는 경우 추가해주세요.
-				: new ResponseEntity<>(coffee,HttpStatus.OK) ;			  // 수정 성공.
+		// 1. id를 이용해서 객체가 있는지 확인
+		// 2. 존재여부에 따라서 있으면, 전달받은 coffee 객체를 이용해서 수정
+		//   없으면, 전달받은 coffee 객체를 이용해서 새롭게 생성하면 됨.
+		return (coffeeRepository.existsById(id))    // coffees 목록에 없는 경우
+				? new ResponseEntity<>(coffeeRepository.save(coffee),HttpStatus.OK)       // 수정 성공.
+				: new ResponseEntity<>(coffeeRepository.save(coffee),HttpStatus.CREATED);  // 없는 경우 추가해주세요.
 	}
 
 	// delete 만들기
 	@DeleteMapping("/{id}")
 	void deleteCoffee(@PathVariable String id) {
-		coffees.removeIf(c -> c.getId().equals(id));
+		coffeeRepository.deleteById(id);
 	}
-
-
 }
 
+// Ch4 데이터베이스 액세스 작업
+// 2. 저장소(repository) - coffee 엔티티에 대한
+interface CoffeeRepository extends CrudRepository<Coffee, String> {}
 
-// 도메인 생성 (coffee)
+
+// 1. 도메인 생성 (coffee)- ch4에서 Entity 구성
+@Entity(name = "coffees")
 class Coffee {
 	// 필드
+	// id에 primary key 설정
+	@Id
 	private String id;
 	private String name;
 
